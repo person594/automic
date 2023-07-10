@@ -25,7 +25,8 @@ class Automaton:
     def add_state(self):
         self.n_states += 1
         self.transitions.append(defaultdict(set))
-    
+        return self.n_states-1
+
     def epsilon_expand(self, states):
         while True:
             expanded = set(states)
@@ -110,17 +111,18 @@ class Automaton:
         
     
     def __iter__(self):
-        frontier = [(s, []) for s in self.epsilon_expand({0})]
+        A = trim(self)
+        frontier = [(s, []) for s in A.epsilon_expand({0})]
         while len(frontier) > 0:
             for state, string in frontier:
-                if state in self.accepting:
+                if state in A.accepting:
                     yield string
 
             new_frontier = []
             for state, string in frontier:
-                for token, successors in self.transitions[state].items():
+                for token, successors in A.transitions[state].items():
                     if token is not None:
-                        for successor in self.epsilon_expand(successors):
+                        for successor in A.epsilon_expand(successors):
                             new_frontier.append((successor, string + [token]))
             
             frontier = new_frontier
@@ -140,8 +142,7 @@ class Automaton:
                 if len(successors) > 1:
                     return False
         return True
-    
-    
+
     def is_trim(self):
         for state in range(self.n_states):
             if not self.is_co_accessible(state):
@@ -192,7 +193,7 @@ class Automaton:
             for token, successors in transitions.items():
                 A.transitions[ia][token] = {mapping[s] for s in successors}
         return A
-                
+
     def __add__(self, other):
         return prune(cat(self,other))
     
@@ -362,37 +363,71 @@ def epsilon_remove(A):
             B.accepting.add(state)
     return B
 
+
 def determinize(A):
     """
-    Powerset construction, probably not practical for large automata
+    Lazy powerset construction, automatically prunes itself
     """
     A = epsilon_remove(A)
-    B = Automaton(2**A.n_states - 1, set())
-    # B's state n corresponds to the set of states defined in (n+1)'s binary representation
-    accepting_mask = 0
-    for state in A.accepting:
-        accepting_mask |= (1<<state)
-    for state in range(B.n_states):
-        bitset = state + 1
-        if bitset & accepting_mask:
-            B.accepting.add(state)
+    subset2state = {frozenset({0}): 0}
+    state2subset = {0: frozenset({0})}
 
-    for i, transitions in enumerate(B.transitions):
-        nondeterministic_transitions = defaultdict(set)
-        bitset = i + 1
-        for j in range(A.n_states):
-            if bitset & (1<<j):
-                for token, successors in A.transitions[j].items():
-                    nondeterministic_transitions[token] |= successors
-        for token, successors in nondeterministic_transitions.items():
-            successor_set = 0
-            for successor in successors:
-                successor_set |= (1<<successor)
-            transitions[token] = {successor_set - 1}
-    return B
-            
+    alphabet = A.alphabet
 
+    B = Automaton(1, set())
+
+    if 0 in A.accepting:
+        B.accepting.add(0)
     
+    frontier = {0}
+    while len(frontier) > 0:
+        new_frontier = set()
+        for B_source_state in frontier:
+            for symbol in alphabet:
+                A_dest_subset = set()
+                for A_source_state in state2subset[B_source_state]:
+                    A_dest_subset |= A.transitions[A_source_state].get(symbol, set())
+                A_dest_subset = frozenset(A_dest_subset)
+                if A_dest_subset not in subset2state:
+                    B_dest_state = B.add_state()
+                    if len(A_dest_subset & A.accepting) > 0:
+                        B.accepting.add(B_dest_state)
+                    new_frontier.add(B_dest_state)
+                    subset2state[A_dest_subset] = B_dest_state
+                    state2subset[B_dest_state] = A_dest_subset
+                else:
+                    B_dest_state = subset2state[A_dest_subset]
+                B.transitions[B_source_state][symbol] = {B_dest_state}
+        frontier = new_frontier
+    return B
+
+def reverse(A):
+    A_reversed = Automaton(A.n_states + 1, {A.n_states})
+    # A's starting state maps to A.n_states+1 as the sole accepting state
+    # A_reversed's starting state has epsilon transitions to all of A's accepting states
+    # All other states map directly
+    for a_state in A.accepting:
+        if a_state == 0:
+            a_state = A.n_states
+        A_reversed.transitions[0][None].add(a_state)
+    for a_src in range(A.n_states):
+        for symbol, a_dests in A.transitions[a_src].items():
+            for a_dest in a_dests:
+                if a_dest == 0:
+                    a_dest = A.n_states
+                if a_src == 0:
+                    a_src = A.n_states
+                A_reversed.transitions[a_dest][symbol].add(a_src)
+    return A_reversed
+
+def minimize(A):
+    """
+    Return a minimized DFA for A, even if A itself isn't deterministic
+    Brzozowski's algorithm
+    """
+    return determinize(reverse(determinize(reverse(A))))
+
+
 def merge(A, i, j):
     B = Automaton(A.n_states - 1, set())
     if i > j:
@@ -544,4 +579,3 @@ def show(A):
         else:
             print(" ", end="")
         print(i, dict(t))
-
