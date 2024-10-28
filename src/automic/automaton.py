@@ -232,9 +232,47 @@ class Automaton:
                 # union of a bunch of automata; start with an empty language
                 B = Automaton(1, set())
                 for n in range(start, stop, step):
-                    B |= repeat(self, n)
+                    B = union(B, repeat(self, n))
 
-                return B
+                return prune(B)
+
+def determinize(self, alphabet=set()):
+    """
+    Lazy powerset construction, automatically prunes itself
+    """
+    A = epsilon_remove(self)
+    subset2state = {frozenset({0}): 0}
+    state2subset = {0: frozenset({0})}
+
+    alphabet = alphabet | A.alphabet
+
+    B = Automaton(1, set())
+
+    if 0 in A.accepting:
+        B.accepting.add(0)
+    
+    frontier = {0}
+    while len(frontier) > 0:
+        new_frontier = set()
+        for B_source_state in frontier:
+            for symbol in alphabet:
+                A_dest_subset = set()
+                for A_source_state in state2subset[B_source_state]:
+                    A_dest_subset |= A.transitions[A_source_state].get(symbol, set())
+                A_dest_subset = frozenset(A_dest_subset)
+                if A_dest_subset not in subset2state:
+                    B_dest_state = B.add_state()
+                    if len(A_dest_subset & A.accepting) > 0:
+                        B.accepting.add(B_dest_state)
+                    new_frontier.add(B_dest_state)
+                    subset2state[A_dest_subset] = B_dest_state
+                    state2subset[B_dest_state] = A_dest_subset
+                else:
+                    B_dest_state = subset2state[A_dest_subset]
+                B.transitions[B_source_state][symbol] = {B_dest_state}
+        frontier = new_frontier
+    return B
+
 
             
             
@@ -316,13 +354,15 @@ def cat(A, B):
     return C
 
 def star(A):
-    B = Automaton(A.n_states, {0})
+    B = Automaton(A.n_states + 1, {0})
+    B.transitions[0][None] = {1}
     for i, transitions in enumerate(A.transitions):
         for token, successors in transitions.items():
-            B.transitions[i][token] |= successors
+            B.transitions[i+1][token] |= {s+1 for s in successors}
     
     for state in A.accepting:
-        B.transitions[state][None].add(0)
+        if state > 0:
+            B.transitions[state+1][None].add(0)
     return B
 
 def repeat(A, n):
@@ -364,7 +404,7 @@ def epsilon_remove(A):
     return B
 
 
-def determinize(A):
+def determinize(A, alphabet=set()):
     """
     Lazy powerset construction, automatically prunes itself
     """
@@ -372,7 +412,7 @@ def determinize(A):
     subset2state = {frozenset({0}): 0}
     state2subset = {0: frozenset({0})}
 
-    alphabet = A.alphabet
+    alphabet = alphabet | A.alphabet
 
     B = Automaton(1, set())
 
@@ -549,7 +589,7 @@ def shallow_match(A, i, j, k):
     
 
     
-def prune(A, max_depth=4):
+def prune(A, max_depth=2):
     if A.pruned_depth >= max_depth:
         return A
     A = epsilon_remove(A)
