@@ -329,8 +329,9 @@ def intersection(A, B):
     return C
     
 def cat(A, B):
-    A = epsilon_remove(A)
-    B = epsilon_remove(B)
+    # I don't think we need this, do we?
+    # A = epsilon_remove(A)
+    # B = epsilon_remove(B)
     C = Automaton(A.n_states + B.n_states, set())
     # all of A's states keep their indices, B's indices change
     b_offset = A.n_states
@@ -344,7 +345,7 @@ def cat(A, B):
     for i, transitions in enumerate(B.transitions):
         for token, successors in transitions.items():
             C.transitions[i+b_offset][token] |= {s + b_offset for s in successors}
-            
+    
     # add epsilon transitions from A's accepting states to B's start state
     for state in A.accepting:
         C.transitions[state][None].add(b_offset)
@@ -404,19 +405,25 @@ def epsilon_remove(A):
     return B
 
 
-def determinize(A, alphabet=set()):
+def determinize(A, alphabet=set(), cut_head=False):
     """
     Lazy powerset construction, automatically prunes itself
     """
-    A = epsilon_remove(A)
-    subset2state = {frozenset({0}): 0}
-    state2subset = {0: frozenset({0})}
+    #A = epsilon_remove(A)
+    A_start = A.epsilon_expand({0})
+    if cut_head:
+        A_start -= {0}
 
+    A_start = frozenset(A_start)
+
+    subset2state = {A_start: 0}
+    state2subset = {0: A_start}
+    
     alphabet = alphabet | A.alphabet
 
     B = Automaton(1, set())
 
-    if 0 in A.accepting:
+    if len(A_start & A.accepting) > 0:
         B.accepting.add(0)
     
     frontier = {0}
@@ -427,6 +434,7 @@ def determinize(A, alphabet=set()):
                 A_dest_subset = set()
                 for A_source_state in state2subset[B_source_state]:
                     A_dest_subset |= A.transitions[A_source_state].get(symbol, set())
+                A_dest_subset = A.epsilon_expand(A_dest_subset)
                 A_dest_subset = frozenset(A_dest_subset)
                 if A_dest_subset not in subset2state:
                     B_dest_state = B.add_state()
@@ -463,9 +471,9 @@ def reverse(A):
 def minimize(A):
     """
     Return a minimized DFA for A, even if A itself isn't deterministic
-    Brzozowski's algorithm
+    Brzozowski's algorithqm
     """
-    return determinize(reverse(determinize(reverse(A))))
+    return determinize(reverse(determinize(reverse(A), cut_head=True)), cut_head=True)
 
 
 def merge(A, i, j):
