@@ -195,13 +195,14 @@ class Automaton:
         return A
 
     def __add__(self, other):
-        return prune(cat(self,other))
+        return cat(self,other)
     
     def __or__(self, other):
-        return prune(union(self, other))
+        #return prune(union(self, other))
+        return union(self, other)
     
     def __and__(self, other):
-        return prune(intersection(self, other))
+        return intersection(self, other)
     
     def __getitem__(self, key):
         if isinstance(key, int):
@@ -313,18 +314,18 @@ def intersection(A, B):
     C = Automaton(A.n_states * B.n_states, set())
     for i in range(A.n_states):
         for j in range(B.n_states):
-            k = i*A.n_states + j
+            k = i*B.n_states + j
             for a_token, a_successors in A.transitions[i].items():
                 for b_token, b_successors in B.transitions[j].items():
                     if a_token == b_token:
                         c_successors = set()
                         for a_successor in a_successors:
                             for b_successor in b_successors:
-                                c_successors.add(a_successor * A.n_states + b_successor)
+                                c_successors.add(a_successor * B.n_states + b_successor)
                         C.transitions[k][a_token] |= c_successors
     for a_accepting in A.accepting:
         for b_accepting in B.accepting:
-            C.accepting.add(a_accepting*A.n_states + b_accepting)
+            C.accepting.add(a_accepting*B.n_states + b_accepting)
     
     return C
     
