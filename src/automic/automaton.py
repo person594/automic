@@ -311,6 +311,8 @@ def union(A, B):
     return C
 
 def intersection(A, B):
+    A = epsilon_remove(A)
+    B = epsilon_remove(B)
     C = Automaton(A.n_states * B.n_states, set())
     for i in range(A.n_states):
         for j in range(B.n_states):
